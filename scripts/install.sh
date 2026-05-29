@@ -129,14 +129,30 @@ install_pnpm() {
     die "Node.js is required before installing pnpm."
   fi
 
+  if ! command -v npm >/dev/null 2>&1; then
+    die "npm is required before installing pnpm."
+  fi
+
   # Some Node.js distributions include Corepack; some may not.
   if ! command -v corepack >/dev/null 2>&1; then
     warn "corepack was not found. Installing Corepack globally with npm."
-    sudo npm install -g corepack
+    sudo -n npm install -g corepack
   fi
 
-  corepack enable
-  corepack prepare pnpm@latest --activate
+  # Corepack creates pnpm/yarn shims next to the Node.js binary.
+  # On this VPS, that target is /usr/bin/pnpm, so it requires sudo.
+  sudo -n corepack enable
+  sudo -n corepack prepare pnpm@latest --activate
+
+  # Refresh Bash's command lookup cache in case pnpm was just created.
+  hash -r || true
+
+  if command -v pnpm >/dev/null 2>&1; then
+    ok_pnpm_version="$(pnpm --version)"
+    log "pnpm installed: ${ok_pnpm_version}"
+  else
+    die "pnpm installation failed: pnpm command is still not available."
+  fi
 }
 
 install_docker() {
