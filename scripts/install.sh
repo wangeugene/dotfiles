@@ -41,7 +41,7 @@ require_sudo() {
     die "sudo is required but not installed."
   fi
 
-  sudo -v
+  sudo -n true || die "Passwordless sudo is required. Run scripts/safety-check.sh --enable-passwordless-sudo first."
 }
 
 apt_install() {
