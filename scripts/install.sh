@@ -5,6 +5,8 @@ set -euo pipefail
 # Installs essential CLI tools, Node.js, pnpm, Docker Engine, and Docker Compose V2.
 
 NODE_MAJOR="${NODE_MAJOR:-24}"
+DEFAULT_USER="${DEFAULT_USER:-eugene}"
+SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-}"
 
 log() {
   printf '\n\033[1;34m==> %s\033[0m\n' "$*"
@@ -33,12 +35,13 @@ require_ubuntu_2404() {
 }
 
 require_sudo() {
-  if [ "$(id -u)" -eq 0 ]; then
-    die "Do not run this script as root. Run it as your normal sudo-capable user."
-  fi
-
   if ! command -v sudo >/dev/null 2>&1; then
     die "sudo is required but not installed."
+  fi
+
+  if [ "$(id -u)" -eq 0 ]; then
+    warn "Running as root. This is allowed only for first-time VPS bootstrap."
+    return
   fi
 
   sudo -n true || die "Passwordless sudo is required. Run scripts/safety-check.sh --enable-passwordless-sudo first."
@@ -46,6 +49,83 @@ require_sudo() {
 
 apt_install() {
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+}
+
+resolve_default_user_ssh_key() {
+  if [ -n "${SSH_PUBLIC_KEY}" ]; then
+    printf '%s\n' "${SSH_PUBLIC_KEY}"
+    return
+  fi
+
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ] && [ -r "/home/${SUDO_USER}/.ssh/authorized_keys" ]; then
+    head -n 1 "/home/${SUDO_USER}/.ssh/authorized_keys"
+    return
+  fi
+
+  if [ -r "$HOME/.ssh/authorized_keys" ]; then
+    head -n 1 "$HOME/.ssh/authorized_keys"
+    return
+  fi
+
+  die "No SSH public key found. Set SSH_PUBLIC_KEY='ssh-ed25519 ...' before running this script."
+}
+
+create_default_user() {
+  log "Creating default user: ${DEFAULT_USER}"
+
+  if ! getent group root >/dev/null 2>&1; then
+    die "The root group does not exist on this system."
+  fi
+
+  if id "${DEFAULT_USER}" >/dev/null 2>&1; then
+    log "User ${DEFAULT_USER} already exists"
+  else
+    sudo useradd \
+      --create-home \
+      --shell /bin/bash \
+      --groups sudo,root \
+      "${DEFAULT_USER}"
+  fi
+
+  sudo usermod -aG sudo,root "${DEFAULT_USER}"
+
+  sudo install -d -m 0700 -o "${DEFAULT_USER}" -g "${DEFAULT_USER}" "/home/${DEFAULT_USER}/.ssh"
+
+  local public_key
+  public_key="$(resolve_default_user_ssh_key)"
+
+  if ! sudo test -f "/home/${DEFAULT_USER}/.ssh/authorized_keys"; then
+    printf '%s\n' "${public_key}" | sudo tee "/home/${DEFAULT_USER}/.ssh/authorized_keys" >/dev/null
+  elif ! sudo grep -qxF "${public_key}" "/home/${DEFAULT_USER}/.ssh/authorized_keys"; then
+    printf '%s\n' "${public_key}" | sudo tee -a "/home/${DEFAULT_USER}/.ssh/authorized_keys" >/dev/null
+  fi
+
+  sudo chown -R "${DEFAULT_USER}:${DEFAULT_USER}" "/home/${DEFAULT_USER}/.ssh"
+  sudo chmod 0700 "/home/${DEFAULT_USER}/.ssh"
+  sudo chmod 0600 "/home/${DEFAULT_USER}/.ssh/authorized_keys"
+
+  sudo install -d -m 0750 /etc/sudoers.d
+  printf '%s\n' "${DEFAULT_USER} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/90-${DEFAULT_USER}-nopasswd" >/dev/null
+  sudo chmod 0440 "/etc/sudoers.d/90-${DEFAULT_USER}-nopasswd"
+  sudo visudo -cf "/etc/sudoers.d/90-${DEFAULT_USER}-nopasswd" >/dev/null
+}
+
+harden_ssh_public_key_only() {
+  log "Configuring SSH public-key-only authentication"
+
+  sudo install -d -m 0755 /etc/ssh/sshd_config.d
+
+  sudo tee /etc/ssh/sshd_config.d/99-public-key-only.conf >/dev/null <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin prohibit-password
+UsePAM yes
+EOF
+
+  sudo sshd -t
+  sudo systemctl reload ssh || sudo systemctl reload sshd
 }
 
 install_base_packages() {
@@ -213,6 +293,8 @@ main() {
   require_ubuntu_2404
   require_sudo
 
+  create_default_user
+  harden_ssh_public_key_only
   install_base_packages
   ensure_fd_command
   ensure_local_bin_in_path
