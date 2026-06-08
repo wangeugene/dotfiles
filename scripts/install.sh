@@ -149,9 +149,27 @@ install_base_packages() {
     unzip \
     zip \
     jq \
+    bat \
     htop \
     rsync \
     stow
+}
+
+ensure_bat_command() {
+  log "Ensuring bat command is available"
+
+  mkdir -p "$HOME/.local/bin"
+
+  if command -v bat >/dev/null 2>&1; then
+    return
+  fi
+
+  if command -v batcat >/dev/null 2>&1; then
+    ln -sfn "$(command -v batcat)" "$HOME/.local/bin/bat"
+    log "Created symlink: $HOME/.local/bin/bat -> $(command -v batcat)"
+  else
+    warn "batcat was not found after installing bat."
+  fi
 }
 
 ensure_fd_command() {
@@ -279,6 +297,8 @@ print_versions() {
   printf 'delta: '; delta --version || true
   printf 'rg: '; rg --version | head -n 1 || true
   printf 'fd: '; fd --version || fdfind --version || true
+  printf 'jq: '; jq --version || true
+  printf 'bat: '; bat --version || batcat --version || true
   printf 'tmux: '; tmux -V || true
   printf 'nvim: '; nvim --version | head -n 1 || true
   printf 'tree: '; tree --version || true
@@ -297,6 +317,7 @@ main() {
   harden_ssh_public_key_only
   install_base_packages
   ensure_fd_command
+  ensure_bat_command
   ensure_local_bin_in_path
   install_nodejs
   install_pnpm
