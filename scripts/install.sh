@@ -149,8 +149,10 @@ install_base_packages() {
     unzip \
     zip \
     jq \
+    sd \
     bat \
     htop \
+    atop \
     rsync \
     stow
 }
@@ -296,8 +298,10 @@ print_versions() {
   printf 'git: '; git --version || true
   printf 'delta: '; delta --version || true
   printf 'rg: '; rg --version | head -n 1 || true
+  printf 'sd: '; sd --version | head -n 1 || true
   printf 'fd: '; fd --version || fdfind --version || true
   printf 'jq: '; jq --version || true
+  printf 'atop: '; atop --version || true
   printf 'bat: '; bat --version || batcat --version || true
   printf 'tmux: '; tmux -V || true
   printf 'nvim: '; nvim --version | head -n 1 || true
