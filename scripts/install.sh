@@ -302,7 +302,14 @@ print_versions() {
   printf 'fd: '; fd --version || fdfind --version || true
   printf 'jq: '; jq --version || true
   printf 'atop: '; atop --version || true
-  printf 'bat: '; bat --version || batcat --version || true
+  printf 'bat: '
+  if command -v bat >/dev/null 2>&1; then
+    bat --version
+  elif command -v batcat >/dev/null 2>&1; then
+    batcat --version
+  else
+    printf 'not installed\n'
+  fi
   printf 'tmux: '; tmux -V || true
   printf 'nvim: '; nvim --version | head -n 1 || true
   printf 'tree: '; tree --version || true
